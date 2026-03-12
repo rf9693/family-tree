@@ -20,10 +20,10 @@ function FamilyTreeApp() {
   const sync = useSupabaseSync(
     (persons: Person[]) => dispatch({ type: 'MERGE_PERSONS', persons }),
     (relations: Relation[]) => dispatch({ type: 'MERGE_RELATIONS', relations }),
-    (person: Person) => dispatch({ type: 'ADD_PERSON', person }),
+    (person: Person) => dispatch({ type: 'MERGE_PERSONS', persons: [person] }),
     (person: Person) => dispatch({ type: 'UPDATE_PERSON', person }),
     (id: string) => dispatch({ type: 'DELETE_PERSON', id }),
-    (relation: Relation) => dispatch({ type: 'ADD_RELATION', relation }),
+    (relation: Relation) => dispatch({ type: 'MERGE_RELATIONS', relations: [relation] }),
     (id: string) => dispatch({ type: 'DELETE_RELATION', id }),
   )
 
@@ -42,8 +42,12 @@ function FamilyTreeApp() {
   }, [])
 
   function handleSavePerson(person: Person, isNew: boolean) {
-    if (isNew) dispatch({ type: 'ADD_PERSON', person })
-    else dispatch({ type: 'UPDATE_PERSON', person })
+    if (isNew) {
+      // Для новых записей используем MERGE_PERSONS чтобы избежать дублирования
+      dispatch({ type: 'MERGE_PERSONS', persons: [person] })
+    } else {
+      dispatch({ type: 'UPDATE_PERSON', person })
+    }
     sync.savePersonWithHistory(person, isNew)
   }
 
@@ -55,7 +59,7 @@ function FamilyTreeApp() {
   }
 
   function handleSaveRelation(relation: Relation) {
-    dispatch({ type: 'ADD_RELATION', relation })
+    dispatch({ type: 'MERGE_RELATIONS', relations: [relation] })
     sync.saveRelation(relation)
   }
 
