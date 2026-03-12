@@ -53,7 +53,8 @@ export function useSupabaseSync(
   // Initial load
   useEffect(() => {
     if (!user) return
-    loadAll()
+    let cancelled = false
+    loadAll().then(() => {}).catch(console.error)
 
     // Realtime subscriptions
     const personsChannel = supabase
@@ -92,8 +93,14 @@ export function useSupabaseSync(
       supabase.from('persons').select('*'),
       supabase.from('relations').select('*'),
     ])
-    if (persons) onPersonsLoad(persons.map(dbToLocal))
-    if (relations) onRelationsLoad(relations.map(r => ({ id: r.id, type: r.type, sourceId: r.source_id, targetId: r.target_id })))
+    if (persons) {
+      const unique = persons.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
+      onPersonsLoad(unique.map(dbToLocal))
+    }
+    if (relations) {
+      const unique = relations.filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i)
+      onRelationsLoad(unique.map(r => ({ id: r.id, type: r.type, sourceId: r.source_id, targetId: r.target_id })))
+    }
   }
 
   async function logHistory(action: string, entityId: string, entityName: string, details?: any) {
