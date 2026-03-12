@@ -107,6 +107,19 @@ export function TreeCanvas() {
   });
   const filteredIds = new Set(filtered.map(p => p.id));
 
+  // Debug: check for duplicates
+  const personIds = state.tree.persons.map(p => p.id);
+  const duplicateIds = personIds.filter((id, index) => personIds.indexOf(id) !== index);
+  if (duplicateIds.length > 0) {
+    console.warn('Duplicate person IDs found:', duplicateIds);
+  }
+
+  const relationIds = state.tree.relations.map(r => r.id);
+  const duplicateRelIds = relationIds.filter((id, index) => relationIds.indexOf(id) !== index);
+  if (duplicateRelIds.length > 0) {
+    console.warn('Duplicate relation IDs found:', duplicateRelIds);
+  }
+
   const transform = `translate(${state.panX}, ${state.panY}) scale(${state.zoom})`;
 
   return (
@@ -146,21 +159,23 @@ export function TreeCanvas() {
 
         {/* Relations */}
         <RelationLines
-          persons={state.tree.persons}
-          relations={state.tree.relations}
+          persons={state.tree.persons.filter((person, index, arr) => arr.findIndex(p => p.id === person.id) === index)}
+          relations={state.tree.relations.filter((relation, index, arr) => arr.findIndex(r => r.id === relation.id) === index)}
           selectedId={state.selectedId}
         />
 
         {/* Person nodes */}
-        {state.tree.persons.map(person => (
-          <PersonNode
-            key={person.id}
-            person={person}
-            isSelected={person.id === state.selectedId}
-            isFiltered={state.searchQuery !== '' || state.filterAlive ? !filteredIds.has(person.id) : false}
-            zoom={state.zoom}
-          />
-        ))}
+        {state.tree.persons
+          .filter((person, index, arr) => arr.findIndex(p => p.id === person.id) === index)
+          .map(person => (
+            <PersonNode
+              key={person.id}
+              person={person}
+              isSelected={person.id === state.selectedId}
+              isFiltered={state.searchQuery !== '' || state.filterAlive ? !filteredIds.has(person.id) : false}
+              zoom={state.zoom}
+            />
+          ))}
       </g>
     </svg>
   );
