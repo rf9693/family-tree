@@ -18,8 +18,8 @@ function FamilyTreeApp() {
   const [showHistory, setShowHistory] = useState(false)
 
   const sync = useSupabaseSync(
-    (persons: Person[]) => dispatch({ type: 'SET_TREE', tree: { ...state.tree, persons } }),
-    (relations: Relation[]) => dispatch({ type: 'SET_TREE', tree: { ...state.tree, relations } }),
+    (persons: Person[]) => dispatch({ type: 'MERGE_PERSONS', persons }),
+    (relations: Relation[]) => dispatch({ type: 'MERGE_RELATIONS', relations }),
     (person: Person) => dispatch({ type: 'ADD_PERSON', person }),
     (person: Person) => dispatch({ type: 'UPDATE_PERSON', person }),
     (id: string) => dispatch({ type: 'DELETE_PERSON', id }),

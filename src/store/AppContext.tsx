@@ -26,6 +26,8 @@ export interface AppState {
 
 type Action =
   | { type: 'SET_TREE'; tree: FamilyTree }
+  | { type: 'MERGE_PERSONS'; persons: Person[] }
+  | { type: 'MERGE_RELATIONS'; relations: Relation[] }
   | { type: 'ADD_PERSON'; person: Person }
   | { type: 'UPDATE_PERSON'; person: Person }
   | { type: 'DELETE_PERSON'; id: string }
@@ -96,6 +98,32 @@ function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SET_TREE':
       return { ...state, tree: action.tree };
+
+    case 'MERGE_PERSONS': {
+      const existingIds = new Set(state.tree.persons.map(p => p.id));
+      const newPersons = action.persons.filter(p => !existingIds.has(p.id));
+      return {
+        ...state,
+        tree: {
+          ...state.tree,
+          persons: [...state.tree.persons, ...newPersons],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    }
+
+    case 'MERGE_RELATIONS': {
+      const existingIds = new Set(state.tree.relations.map(r => r.id));
+      const newRelations = action.relations.filter(r => !existingIds.has(r.id));
+      return {
+        ...state,
+        tree: {
+          ...state.tree,
+          relations: [...state.tree.relations, ...newRelations],
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    }
 
     case 'PUSH_HISTORY':
       return pushHistory(state);
