@@ -107,17 +107,11 @@ export function TreeCanvas() {
   });
   const filteredIds = new Set(filtered.map(p => p.id));
 
-  // Debug: check for duplicates
+  // Debug: check for duplicates (only once)
   const personIds = state.tree.persons.map(p => p.id);
   const duplicateIds = personIds.filter((id, index) => personIds.indexOf(id) !== index);
   if (duplicateIds.length > 0) {
-    console.warn('Duplicate person IDs found:', duplicateIds);
-  }
-
-  const relationIds = state.tree.relations.map(r => r.id);
-  const duplicateRelIds = relationIds.filter((id, index) => relationIds.indexOf(id) !== index);
-  if (duplicateRelIds.length > 0) {
-    console.warn('Duplicate relation IDs found:', duplicateRelIds);
+    console.warn('Duplicate person IDs found:', [...new Set(duplicateIds)]);
   }
 
   const transform = `translate(${state.panX}, ${state.panY}) scale(${state.zoom})`;

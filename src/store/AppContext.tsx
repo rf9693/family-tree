@@ -100,26 +100,26 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, tree: action.tree };
 
     case 'MERGE_PERSONS': {
-      const existingIds = new Set(state.tree.persons.map(p => p.id));
-      const newPersons = action.persons.filter(p => !existingIds.has(p.id));
+      const existingMap = new Map(state.tree.persons.map(p => [p.id, p]));
+      action.persons.forEach(p => existingMap.set(p.id, p));
       return {
         ...state,
         tree: {
           ...state.tree,
-          persons: [...state.tree.persons, ...newPersons],
+          persons: Array.from(existingMap.values()),
           updatedAt: new Date().toISOString(),
         },
       };
     }
 
     case 'MERGE_RELATIONS': {
-      const existingIds = new Set(state.tree.relations.map(r => r.id));
-      const newRelations = action.relations.filter(r => !existingIds.has(r.id));
+      const existingMap = new Map(state.tree.relations.map(r => [r.id, r]));
+      action.relations.forEach(r => existingMap.set(r.id, r));
       return {
         ...state,
         tree: {
           ...state.tree,
-          relations: [...state.tree.relations, ...newRelations],
+          relations: Array.from(existingMap.values()),
           updatedAt: new Date().toISOString(),
         },
       };
