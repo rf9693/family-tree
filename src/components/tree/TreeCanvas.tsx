@@ -12,12 +12,11 @@ interface ContextMenuState {
 }
 
 interface TreeCanvasProps {
-  onEditPerson?: (id: string) => void;
-  onAddPerson?: () => void;
   onDeletePerson?: (id: string) => void;
+  onAddRelative?: (personId: string, relativeType: string) => void;
 }
 
-export function TreeCanvas({ onEditPerson, onDeletePerson }: TreeCanvasProps) {
+export function TreeCanvas({ onDeletePerson, onAddRelative }: TreeCanvasProps) {
   const { state, dispatch } = useApp();
   const { isOwner, user } = useAuth();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -37,7 +36,6 @@ export function TreeCanvas({ onEditPerson, onDeletePerson }: TreeCanvasProps) {
     return () => ro.disconnect();
   }, []);
 
-  // Закрывать контекстное меню при нажатии Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setContextMenu(null); };
     window.addEventListener('keydown', handler);
@@ -68,10 +66,8 @@ export function TreeCanvas({ onEditPerson, onDeletePerson }: TreeCanvasProps) {
 
   const handleMouseUp = useCallback(() => { isPanning.current = false; }, []);
 
-  // Правый клик — ищем ближайший узел
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    // Ищем person-id в элементе или его родителях
     let el = e.target as Element | null;
     let personId: string | null = null;
     while (el && el !== svgRef.current) {
@@ -87,7 +83,6 @@ export function TreeCanvas({ onEditPerson, onDeletePerson }: TreeCanvasProps) {
     }
   }, [dispatch]);
 
-  // Touch pan/zoom
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -121,14 +116,13 @@ export function TreeCanvas({ onEditPerson, onDeletePerson }: TreeCanvasProps) {
     lastTap.current = now;
   }, [dispatch]);
 
-  const filtered = state.tree.persons.filter(p => {
+  const uniquePersons = state.tree.persons.filter((p, i, a) => a.findIndex(x => x.id === p.id) === i);
+  const uniqueRelations = state.tree.relations.filter((r, i, a) => a.findIndex(x => x.id === r.id) === i);
+  const filteredIds = new Set(uniquePersons.filter(p => {
     if (state.searchQuery && !`${p.firstName} ${p.lastName}`.toLowerCase().includes(state.searchQuery.toLowerCase())) return false;
     if (state.filterAlive && p.deathDate) return false;
     return true;
-  });
-  const filteredIds = new Set(filtered.map(p => p.id));
-  const uniquePersons = state.tree.persons.filter((p, i, a) => a.findIndex(x => x.id === p.id) === i);
-  const uniqueRelations = state.tree.relations.filter((r, i, a) => a.findIndex(x => x.id === r.id) === i);
+  }).map(p => p.id));
 
   return (
     <>
@@ -153,17 +147,13 @@ export function TreeCanvas({ onEditPerson, onDeletePerson }: TreeCanvasProps) {
             <polygon points="0 0, 6 2, 0 4" fill="#4a5568" />
           </marker>
         </defs>
-
         <rect data-bg="true" x={0} y={0} width={dimensions.w} height={dimensions.h} fill="transparent" />
-
         <g transform={`translate(${state.panX}, ${state.panY}) scale(${state.zoom})`}>
           <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
             <circle cx="0" cy="0" r="0.8" fill="rgba(255,255,255,0.06)" />
           </pattern>
           <rect x={-5000} y={-5000} width={10000} height={10000} fill="url(#grid)" />
-
           <RelationLines persons={uniquePersons} relations={uniqueRelations} selectedId={state.selectedId} />
-
           {uniquePersons.map(person => (
             <PersonNode
               key={person.id}
@@ -187,8 +177,7 @@ export function TreeCanvas({ onEditPerson, onDeletePerson }: TreeCanvasProps) {
             setContextMenu(null);
           }}
           onAddRelative={(type) => {
-            // Открываем диалог редактирования с предвыбранным типом связи
-            dispatch({ type: 'EDIT', id: contextMenu.personId });
+            onAddRelative?.(contextMenu.personId, type);
             setContextMenu(null);
           }}
           onDelete={() => {

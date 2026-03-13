@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { AppProvider, useApp } from './store/AppContext'
+import { AppProvider, useApp, generateId } from './store/AppContext'
 import { useAuth } from './store/AuthContext'
 import { AuthPage } from './pages/AuthPage'
 import { TreeCanvas } from './components/tree/TreeCanvas'
@@ -11,10 +11,18 @@ import { useSupabaseSync } from './hooks/useSupabaseSync'
 import { initDB } from './utils/storage'
 import { Person, Relation } from './types'
 
+// Pending relation to create after new person is saved
+interface PendingRelation {
+  sourcePersonId: string;
+  relationType: 'parent-child' | 'spouse' | 'sibling';
+  direction: 'from' | 'to'; // from = sourcePersonId is parent/source, to = sourcePersonId is child/target
+}
+
 function FamilyTreeApp() {
   const { user, profile, signOut, isOwner } = useAuth()
-  const { state, dispatch } = useApp()
+  const { state, dispatch, addPerson, addRelation } = useApp()
   const [dialogPersonId, setDialogPersonId] = useState<string | null>(null)
+  const [pendingRelation, setPendingRelation] = useState<PendingRelation | null>(null)
   const [showHistory, setShowHistory] = useState(false)
 
   const sync = useSupabaseSync(
@@ -34,7 +42,7 @@ function FamilyTreeApp() {
         if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); dispatch({ type: 'UNDO' }) }
         if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); dispatch({ type: 'REDO' }) }
       }
-      if (e.key === 'Escape') { setDialogPersonId(null); dispatch({ type: 'SELECT', id: null }) }
+      if (e.key === 'Escape') { setDialogPersonId(null); dispatch({ type: 'EDIT', id: null }) }
       const tag = (document.activeElement as HTMLElement)?.tagName
       if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedId && !dialogPersonId && tag !== 'INPUT' && tag !== 'TEXTAREA') {
         const p = state.tree.persons.find(p => p.id === state.selectedId)
@@ -48,14 +56,59 @@ function FamilyTreeApp() {
     return () => window.removeEventListener('keydown', onKey)
   }, [state.selectedId, dialogPersonId, isOwner, user])
 
-  // Может ли текущий пользователь удалить человека
   function canDelete(person: Person): boolean {
     return isOwner || person.createdBy === user?.id
   }
 
+  // Добавить родственника через контекстное меню
+  function handleAddRelative(personId: string, relativeType: string) {
+    const sourcePerson = state.tree.persons.find(p => p.id === personId)
+    if (!sourcePerson) return
+
+    // Определяем позицию нового человека рядом с источником
+    const offset = { x: 220, y: 0 }
+    if (relativeType === 'child') offset = { x: 0, y: 200 }
+    if (relativeType === 'parent') offset = { x: 0, y: -200 }
+    if (relativeType === 'sibling') offset = { x: 220, y: 0 }
+
+    const newId = generateId()
+
+    // Сохраняем pending связь
+    let pending: PendingRelation
+    if (relativeType === 'child') {
+      pending = { sourcePersonId: personId, relationType: 'parent-child', direction: 'from' }
+    } else if (relativeType === 'parent') {
+      pending = { sourcePersonId: personId, relationType: 'parent-child', direction: 'to' }
+    } else if (relativeType === 'spouse') {
+      pending = { sourcePersonId: personId, relationType: 'spouse', direction: 'from' }
+    } else {
+      pending = { sourcePersonId: personId, relationType: 'sibling', direction: 'from' }
+    }
+    setPendingRelation(pending)
+
+    // Открываем диалог создания нового человека с предзаполненным ID
+    setDialogPersonId('__new__:' + newId + ':' + sourcePerson.x + ':' + (sourcePerson.y + (relativeType === 'child' ? 200 : relativeType === 'parent' ? -200 : 0)) + ':' + (relativeType !== 'child' && relativeType !== 'parent' ? sourcePerson.x + 220 : sourcePerson.x))
+  }
+
   function handleSavePerson(person: Person, isNew: boolean) {
-    if (isNew) dispatch({ type: 'MERGE_PERSONS', persons: [person] })
-    else dispatch({ type: 'UPDATE_PERSON', person })
+    if (isNew) {
+      dispatch({ type: 'MERGE_PERSONS', persons: [person] })
+      // Если есть pending связь — создаём её
+      if (pendingRelation) {
+        const { sourcePersonId, relationType, direction } = pendingRelation
+        const rel: Relation = {
+          id: generateId(),
+          type: relationType,
+          sourceId: direction === 'from' ? sourcePersonId : person.id,
+          targetId: direction === 'from' ? person.id : sourcePersonId,
+        }
+        dispatch({ type: 'ADD_RELATION', relation: rel })
+        sync.saveRelation(rel)
+        setPendingRelation(null)
+      }
+    } else {
+      dispatch({ type: 'UPDATE_PERSON', person })
+    }
     sync.savePersonWithHistory(person, isNew)
   }
 
@@ -72,18 +125,34 @@ function FamilyTreeApp() {
   }
 
   function handleDeleteRelation(id: string) {
-    if (!isOwner) return
     dispatch({ type: 'DELETE_RELATION', id })
     sync.deleteRelation(id)
+  }
+
+  function handleCloseDialog() {
+    setDialogPersonId(null)
+    setPendingRelation(null)
+    dispatch({ type: 'EDIT', id: null })
   }
 
   const roleBadge = isOwner
     ? { label: '👑 Владелец', color: '#c9a84c', bg: 'rgba(201,168,76,.15)' }
     : { label: '👤 Участник', color: '#64748b', bg: 'rgba(255,255,255,.05)' }
 
-  // Для текущего открытого диалога — может ли пользователь удалять
-  const dialogPerson = state.tree.persons.find(p => p.id === (dialogPersonId || state.editingId))
+  const dialogPerson = state.tree.persons.find(p => p.id === (state.editingId))
   const canDeleteDialog = dialogPerson ? canDelete(dialogPerson) : false
+
+  // Парсим специальный формат dialogPersonId для позиционирования
+  const activeDialogId = dialogPersonId?.startsWith('__new__:')
+    ? '__new__'
+    : (dialogPersonId || state.editingId)
+
+  const newPersonPreset = dialogPersonId?.startsWith('__new__:')
+    ? (() => {
+        const parts = dialogPersonId.split(':')
+        return { x: parseFloat(parts[4] || '400'), y: parseFloat(parts[2] || '300') }
+      })()
+    : null
 
   return (
     <div style={{ width:'100vw', height:'100vh', overflow:'hidden', background:'linear-gradient(160deg,#060d1f,#0d1a35 40%,#080d20)', position:'relative' }}>
@@ -115,7 +184,6 @@ function FamilyTreeApp() {
         </div>
       </div>
 
-      {/* Подсказка для участников */}
       {!isOwner && (
         <div style={{ position:'fixed', top:52, left:0, right:0, zIndex:90, background:'rgba(59,130,246,.06)', borderBottom:'1px solid rgba(59,130,246,.12)', padding:'5px 16px', fontSize:11, color:'#475569', textAlign:'center' }}>
           Вы участник — можете добавлять людей и удалять только тех, кого сами добавили
@@ -123,20 +191,24 @@ function FamilyTreeApp() {
       )}
 
       <div style={{ paddingTop: isOwner ? 52 : 74 }}>
-        <TreeCanvas onDeletePerson={handleDeletePerson} />
+        <TreeCanvas
+          onDeletePerson={handleDeletePerson}
+          onAddRelative={handleAddRelative}
+        />
       </div>
 
-      <FloatingPanel onAddPerson={() => setDialogPersonId('__new__')} />
+      <FloatingPanel onAddPerson={() => { setPendingRelation(null); setDialogPersonId('__new__') }} />
       {state.showTutorial && <Tutorial />}
 
-      {(dialogPersonId || state.editingId) && (
+      {(activeDialogId || state.editingId) && (
         <PersonDialog
-          personId={dialogPersonId || state.editingId}
-          onClose={() => { setDialogPersonId(null); dispatch({ type: 'EDIT', id: null }) }}
+          personId={activeDialogId || state.editingId}
+          newPersonPreset={newPersonPreset}
+          onClose={handleCloseDialog}
           onSave={handleSavePerson}
-          onDelete={canDeleteDialog || dialogPersonId === '__new__' ? handleDeletePerson : undefined}
+          onDelete={canDeleteDialog ? handleDeletePerson : undefined}
           onSaveRelation={handleSaveRelation}
-          onDeleteRelation={isOwner ? handleDeleteRelation : undefined}
+          onDeleteRelation={handleDeleteRelation}
         />
       )}
 

@@ -10,9 +10,10 @@ interface PersonDialogProps {
   onDelete?: (id: string) => void;
   onSaveRelation?: (relation: Relation) => void;
   onDeleteRelation?: (id: string) => void;
+  newPersonPreset?: { x: number; y: number } | null;
 }
 
-export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelation, onDeleteRelation }: PersonDialogProps) {
+export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelation, onDeleteRelation, newPersonPreset }: PersonDialogProps) {
   const { state, dispatch, updatePerson, deletePerson, setPhoto, addPerson, addRelation } = useApp();
   const isNew = personId === '__new__';
   const person = isNew ? null : state.tree.persons.find(p => p.id === personId);
@@ -44,7 +45,7 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
 
   function handleSave() {
     if (isNew) {
-      const newP = addPerson(form as Partial<Person>);
+      const newP = addPerson({ ...form as Partial<Person>, ...(newPersonPreset || {}) });
       if (photoPreview) setPhoto(newP.id, photoPreview);
       onSave?.(newP, true);
     } else if (person) {
