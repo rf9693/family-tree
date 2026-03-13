@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Person, Gender, Privacy, Relation } from '../../types';
-import { useApp } from '../../store/AppContext';
+import { useApp, generateId } from '../../store/AppContext';
 import { useAuth } from '../../store/AuthContext';
 import { t } from '../../i18n';
 
@@ -83,24 +83,30 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
 
   function handleAddRelation() {
     if (!relationTarget || !person) return;
-    let relData: Omit<Relation, 'id'>;
+    let relData: Omit<Relation, 'id' | 'createdBy'>;
     if (relationType === 'parent-child') {
       relData = { 
         type: 'parent-child', 
         sourceId: relationDir === 'from' ? person.id : relationTarget, 
-        targetId: relationDir === 'from' ? relationTarget : person.id,
-        createdBy: user?.id
+        targetId: relationDir === 'from' ? relationTarget : person.id
       };
     } else {
       relData = { 
         type: relationType, 
         sourceId: person.id, 
-        targetId: relationTarget,
-        createdBy: user?.id
+        targetId: relationTarget
       };
     }
-    const saved = addRelation(relData); // addRelation теперь возвращает Relation с id
-    onSaveRelation?.(saved);
+    
+    // Создаем полную связь с ID и createdBy
+    const fullRelation: Relation = {
+      id: generateId(),
+      createdBy: user?.id,
+      ...relData
+    };
+    
+    // Используем onSaveRelation вместо addRelation для правильной синхронизации
+    onSaveRelation?.(fullRelation);
     setRelationTarget('');
   }
 
@@ -244,7 +250,7 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
                       <div key={rel.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 4 }}>
                         <span>{typeIcon}</span>
                         <span style={{ color: '#e2e8f0', flex: 1, fontSize: 13 }}>{other ? `${other.firstName} ${other.lastName}` : 'Unknown'}</span>
-                        <button onClick={() => { dispatch({ type: 'DELETE_RELATION', id: rel.id }); }}
+                        <button onClick={() => { onDeleteRelation?.(rel.id); }}
                           style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
                       </div>
                     );

@@ -51,7 +51,13 @@ export function useSupabaseSync(
     const relationsChannel = supabase.channel('relations-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'relations' }, payload => {
         if (payload.new.created_by !== user.id)
-          onRelationAdded({ id: payload.new.id, type: payload.new.type, sourceId: payload.new.source_id, targetId: payload.new.target_id })
+          onRelationAdded({ 
+            id: payload.new.id, 
+            type: payload.new.type, 
+            sourceId: payload.new.source_id, 
+            targetId: payload.new.target_id,
+            createdBy: payload.new.created_by
+          })
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'relations' }, payload => {
         onRelationDeleted(payload.old.id)
@@ -73,7 +79,13 @@ export function useSupabaseSync(
     const ur = (relations || []).filter((r, i, a) => a.findIndex(x => x.id === r.id) === i)
     onLoad(
       up.map(dbToLocal),
-      ur.map(r => ({ id: r.id, type: r.type, sourceId: r.source_id, targetId: r.target_id }))
+      ur.map(r => ({ 
+        id: r.id, 
+        type: r.type, 
+        sourceId: r.source_id, 
+        targetId: r.target_id,
+        createdBy: r.created_by
+      }))
     )
   }
 
