@@ -66,10 +66,10 @@ function FamilyTreeApp() {
     if (!sourcePerson) return
 
     // Определяем позицию нового человека рядом с источником
-    const offset = { x: 220, y: 0 }
-    if (relativeType === 'child') offset = { x: 0, y: 200 }
-    if (relativeType === 'parent') offset = { x: 0, y: -200 }
-    if (relativeType === 'sibling') offset = { x: 220, y: 0 }
+    let offsetX = 220, offsetY = 0
+    if (relativeType === 'child') { offsetX = 0; offsetY = 200 }
+    if (relativeType === 'parent') { offsetX = 0; offsetY = -200 }
+    if (relativeType === 'sibling') { offsetX = 220; offsetY = 0 }
 
     const newId = generateId()
 
@@ -87,7 +87,9 @@ function FamilyTreeApp() {
     setPendingRelation(pending)
 
     // Открываем диалог создания нового человека с предзаполненным ID
-    setDialogPersonId('__new__:' + newId + ':' + sourcePerson.x + ':' + (sourcePerson.y + (relativeType === 'child' ? 200 : relativeType === 'parent' ? -200 : 0)) + ':' + (relativeType !== 'child' && relativeType !== 'parent' ? sourcePerson.x + 220 : sourcePerson.x))
+    const newX = sourcePerson.x + offsetX
+    const newY = sourcePerson.y + offsetY
+    setDialogPersonId(`__new__:${newId}:${newX}:${newY}:${sourcePerson.x}`)
   }
 
   function handleSavePerson(person: Person, isNew: boolean) {

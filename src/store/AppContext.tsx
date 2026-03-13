@@ -172,6 +172,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.tree.persons.length]);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  
+  // Сохранение в localStorage при изменениях
+  useEffect(() => {
+    if (state.tree.persons.length > 0 || state.tree.relations.length > 0) {
+      localStorage.setItem('familyTree', JSON.stringify({
+        tree: state.tree,
+        photos: state.photos,
+        zoom: state.zoom,
+        panX: state.panX,
+        panY: state.panY
+      }));
+    }
+  }, [state.tree, state.photos, state.zoom, state.panX, state.panY]);
+
+  // Загрузка из localStorage при старте
+  useEffect(() => {
+    const saved = localStorage.getItem('familyTree');
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (data.tree) {
+          dispatch({ type: 'SET_TREE', tree: data.tree });
+          if (data.photos) {
+            Object.entries(data.photos).forEach(([personId, photo]) => {
+              dispatch({ type: 'SET_PHOTO', personId, photo: photo as string });
+            });
+          }
+          if (data.zoom) dispatch({ type: 'SET_ZOOM', zoom: data.zoom });
+          if (data.panX !== undefined && data.panY !== undefined) {
+            dispatch({ type: 'SET_PAN', x: data.panX, y: data.panY });
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load saved tree:', e);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => saveMeta(state.tree), 10000);
@@ -179,7 +217,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.tree]);
 
   const addPerson = useCallback((partial: Partial<Person>): Person => {
-    const person: Person = { id: generateId(), firstName: '', lastName: '', gender: 'unknown', privacy: 'public', x: 200 + Math.random() * 400, y: 200 + Math.random() * 200, ...partial };
+    const person: Person = { 
+      id: generateId(), 
+      firstName: '', 
+      lastName: '', 
+      gender: 'unknown', 
+      privacy: 'public', 
+      x: 200 + Math.random() * 400, 
+      y: 200 + Math.random() * 200, 
+      createdBy: '', // Будет установлено в компоненте
+      ...partial 
+    };
     dispatch({ type: 'ADD_PERSON', person });
     return person;
   }, []);
@@ -188,7 +236,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deletePerson = useCallback((id: string) => { deletePhoto(id); dispatch({ type: 'DELETE_PERSON', id }); }, []);
 
   const addRelation = useCallback((rel: Omit<Relation, 'id'>): Relation => {
-    const relation: Relation = { id: generateId(), ...rel };
+    const relation: Relation = { 
+      id: generateId(), 
+      createdBy: '', // Будет установлено в компоненте
+      ...rel 
+    };
     dispatch({ type: 'ADD_RELATION', relation });
     return relation;
   }, []);

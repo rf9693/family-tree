@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Person, Gender, Privacy, Relation } from '../../types';
 import { useApp } from '../../store/AppContext';
+import { useAuth } from '../../store/AuthContext';
 import { t } from '../../i18n';
 
 interface PersonDialogProps {
@@ -15,6 +16,7 @@ interface PersonDialogProps {
 
 export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelation, onDeleteRelation, newPersonPreset }: PersonDialogProps) {
   const { state, dispatch, updatePerson, deletePerson, setPhoto, addPerson, addRelation } = useApp();
+  const { user } = useAuth();
   const isNew = personId === '__new__';
   const person = isNew ? null : state.tree.persons.find(p => p.id === personId);
 
@@ -45,7 +47,11 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
 
   function handleSave() {
     if (isNew) {
-      const newP = addPerson({ ...form as Partial<Person>, ...(newPersonPreset || {}) });
+      const newP = addPerson({ 
+        ...form as Partial<Person>, 
+        createdBy: user?.id,
+        ...(newPersonPreset || {}) 
+      });
       if (photoPreview) setPhoto(newP.id, photoPreview);
       onSave?.(newP, true);
     } else if (person) {
@@ -79,9 +85,19 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
     if (!relationTarget || !person) return;
     let relData: Omit<Relation, 'id'>;
     if (relationType === 'parent-child') {
-      relData = { type: 'parent-child', sourceId: relationDir === 'from' ? person.id : relationTarget, targetId: relationDir === 'from' ? relationTarget : person.id };
+      relData = { 
+        type: 'parent-child', 
+        sourceId: relationDir === 'from' ? person.id : relationTarget, 
+        targetId: relationDir === 'from' ? relationTarget : person.id,
+        createdBy: user?.id
+      };
     } else {
-      relData = { type: relationType, sourceId: person.id, targetId: relationTarget };
+      relData = { 
+        type: relationType, 
+        sourceId: person.id, 
+        targetId: relationTarget,
+        createdBy: user?.id
+      };
     }
     const saved = addRelation(relData); // addRelation теперь возвращает Relation с id
     onSaveRelation?.(saved);

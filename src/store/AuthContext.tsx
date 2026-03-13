@@ -10,6 +10,10 @@ interface AuthContextType {
   isOwner: boolean
   canEdit: (createdBy?: string) => boolean
   canDelete: (createdBy?: string) => boolean
+  canAddPerson: () => boolean
+  canAddRelation: () => boolean
+  canExport: () => boolean
+  canImport: () => boolean
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
@@ -47,15 +51,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error }
   }
 
+  const OWNER_EMAIL = 'rf9339945@gmail.com';
+
   async function signUp(email: string, password: string, fullName: string) {
-    const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
-    const isFirst = (count || 0) === 0
     const { data, error } = await supabase.auth.signUp({
       email, password, options: { data: { full_name: fullName } }
     })
-    if (!error && data.user && isFirst) {
+    if (!error && data.user) {
+      // Жестко задаем владельца
+      const role = email === OWNER_EMAIL ? 'owner' : 'member';
       setTimeout(async () => {
-        await supabase.from('profiles').update({ role: 'owner' }).eq('id', data.user!.id)
+        await supabase.from('profiles').update({ role }).eq('id', data.user!.id)
       }, 1500)
     }
     return { error }
@@ -63,11 +69,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signOut() { await supabase.auth.signOut() }
 
-  const isOwner = profile?.role === 'owner'
+  const isOwner = profile?.role === 'owner' || user?.email === OWNER_EMAIL;
 
   // Владелец может редактировать всё. Участник — только своё (или новое, где createdBy не задан)
   const canEdit = (createdBy?: string) => {
     if (isOwner) return true
+    if (!user) return false // Неавторизованные не могут редактировать
     if (!createdBy) return true // новый объект
     return createdBy === user?.id
   }
@@ -75,12 +82,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Владелец удаляет всё. Участник — только своё
   const canDelete = (createdBy?: string) => {
     if (isOwner) return true
+    if (!user) return false // Неавторизованные не могут удалять
     if (!createdBy) return false
     return createdBy === user?.id
   }
 
+  // Ограничения для не-владельцев
+  const canAddPerson = () => isOwner || !!user
+  const canAddRelation = () => isOwner || !!user
+  const canExport = () => isOwner
+  const canImport = () => isOwner
+
   return (
-    <AuthContext.Provider value={{ user, profile, session, loading, isOwner, canEdit, canDelete, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ 
+      user, profile, session, loading, isOwner, 
+      canEdit, canDelete, canAddPerson, canAddRelation, canExport, canImport,
+      signIn, signUp, signOut 
+    }}>
       {children}
     </AuthContext.Provider>
   )

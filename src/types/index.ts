@@ -21,6 +21,7 @@ export interface Person {
 
 export interface Relation {
   id: string;
+  createdBy?: string;
   type: RelationType;
   sourceId: string;
   targetId: string;
