@@ -76,15 +76,14 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
 
   function handleAddRelation() {
     if (!relationTarget || !person) return;
-    let relation: Omit<Relation, 'id'>;
+    let relData: Omit<Relation, 'id'>;
     if (relationType === 'parent-child') {
-      relation = { type: 'parent-child', sourceId: relationDir === 'from' ? person.id : relationTarget, targetId: relationDir === 'from' ? relationTarget : person.id };
+      relData = { type: 'parent-child', sourceId: relationDir === 'from' ? person.id : relationTarget, targetId: relationDir === 'from' ? relationTarget : person.id };
     } else {
-      relation = { type: relationType, sourceId: person.id, targetId: relationTarget };
+      relData = { type: relationType, sourceId: person.id, targetId: relationTarget };
     }
-    const newRel = { ...relation, id: Math.random().toString(36).slice(2) + Date.now().toString(36) } as Relation;
-    addRelation(relation);
-    onSaveRelation?.(newRel);
+    const saved = addRelation(relData); // addRelation теперь возвращает Relation с id
+    onSaveRelation?.(saved);
     setRelationTarget('');
   }
 
@@ -287,7 +286,7 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
           <button onClick={handleSave} style={{ ...btnStyle, flex: 1, background: 'rgba(59,130,246,0.3)' }}>
             ✓ {t('save')}
           </button>
-          {!isNew && (
+          {!isNew && onDelete && (
             <button
               onClick={handleDelete}
               style={{ ...btnStyle, background: deleteConfirm ? 'rgba(239,68,68,0.4)' : 'rgba(239,68,68,0.15)', color: '#fca5a5' }}

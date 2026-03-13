@@ -5,43 +5,25 @@ import { useAuth } from '../store/AuthContext'
 
 function dbToLocal(p: DBPerson): Person {
   return {
-    id: p.id,
-    firstName: p.first_name,
-    lastName: p.last_name,
-    birthDate: p.birth_date,
-    deathDate: p.death_date,
-    birthPlace: p.birth_place,
-    gender: p.gender as any,
-    notes: p.notes,
-    privacy: p.privacy as any,
-    photo: p.photo_url,
-    x: p.x,
-    y: p.y,
-    isMe: p.is_me,
+    id: p.id, firstName: p.first_name, lastName: p.last_name,
+    birthDate: p.birth_date, deathDate: p.death_date, birthPlace: p.birth_place,
+    gender: p.gender as any, notes: p.notes, privacy: p.privacy as any,
+    photo: p.photo_url, x: p.x, y: p.y, isMe: p.is_me,
+    createdBy: p.created_by,
   }
 }
 
 function localToDB(p: Person): Omit<DBPerson, 'created_at' | 'updated_at'> {
   return {
-    id: p.id,
-    first_name: p.firstName,
-    last_name: p.lastName,
-    birth_date: p.birthDate,
-    death_date: p.deathDate,
-    birth_place: p.birthPlace,
-    gender: p.gender,
-    notes: p.notes,
-    privacy: p.privacy,
-    photo_url: p.photo,
-    x: p.x,
-    y: p.y,
-    is_me: p.isMe || false,
+    id: p.id, first_name: p.firstName, last_name: p.lastName,
+    birth_date: p.birthDate, death_date: p.deathDate, birth_place: p.birthPlace,
+    gender: p.gender, notes: p.notes, privacy: p.privacy,
+    photo_url: p.photo, x: p.x, y: p.y, is_me: p.isMe || false,
   }
 }
 
 export function useSupabaseSync(
-  onPersonsLoad: (persons: Person[]) => void,
-  onRelationsLoad: (relations: Relation[]) => void,
+  onLoad: (persons: Person[], relations: Relation[]) => void,
   onPersonAdded: (person: Person) => void,
   onPersonUpdated: (person: Person) => void,
   onPersonDeleted: (id: string) => void,
@@ -50,15 +32,11 @@ export function useSupabaseSync(
 ) {
   const { user, profile } = useAuth()
 
-  // Initial load
   useEffect(() => {
     if (!user) return
-    let cancelled = false
-    loadAll().then(() => {}).catch(console.error)
+    loadAll()
 
-    // Realtime subscriptions
-    const personsChannel = supabase
-      .channel('persons-changes')
+    const personsChannel = supabase.channel('persons-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'persons' }, payload => {
         if (payload.new.created_by !== user.id) onPersonAdded(dbToLocal(payload.new as DBPerson))
       })
@@ -70,12 +48,10 @@ export function useSupabaseSync(
       })
       .subscribe()
 
-    const relationsChannel = supabase
-      .channel('relations-changes')
+    const relationsChannel = supabase.channel('relations-changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'relations' }, payload => {
-        if (payload.new.created_by !== user.id) {
+        if (payload.new.created_by !== user.id)
           onRelationAdded({ id: payload.new.id, type: payload.new.type, sourceId: payload.new.source_id, targetId: payload.new.target_id })
-        }
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'relations' }, payload => {
         onRelationDeleted(payload.old.id)
@@ -93,14 +69,12 @@ export function useSupabaseSync(
       supabase.from('persons').select('*'),
       supabase.from('relations').select('*'),
     ])
-    if (persons) {
-      const unique = persons.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
-      onPersonsLoad(unique.map(dbToLocal))
-    }
-    if (relations) {
-      const unique = relations.filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i)
-      onRelationsLoad(unique.map(r => ({ id: r.id, type: r.type, sourceId: r.source_id, targetId: r.target_id })))
-    }
+    const up = (persons || []).filter((p, i, a) => a.findIndex(x => x.id === p.id) === i)
+    const ur = (relations || []).filter((r, i, a) => a.findIndex(x => x.id === r.id) === i)
+    onLoad(
+      up.map(dbToLocal),
+      ur.map(r => ({ id: r.id, type: r.type, sourceId: r.source_id, targetId: r.target_id }))
+    )
   }
 
   async function logHistory(action: string, entityId: string, entityName: string, details?: any) {
@@ -108,19 +82,21 @@ export function useSupabaseSync(
     await supabase.from('history').insert({
       user_id: user.id,
       user_name: profile?.full_name || user.email || 'Аноним',
-      action,
-      entity_id: entityId,
-      entity_name: entityName,
-      details,
+      action, entity_id: entityId, entity_name: entityName, details,
     })
   }
 
   const savePerson = useCallback(async (person: Person) => {
     if (!user) return
-    const db = { ...localToDB(person), created_by: user.id }
-    const { error } = await supabase.from('persons').upsert(db)
+    const { error } = await supabase.from('persons').upsert({ ...localToDB(person), created_by: user.id })
     if (error) console.error('savePerson error', error)
   }, [user])
+
+  const savePersonWithHistory = useCallback(async (person: Person, isNew: boolean) => {
+    await savePerson(person)
+    const name = `${person.firstName} ${person.lastName}`.trim() || 'Без имени'
+    await logHistory(isNew ? 'add_person' : 'update_person', person.id, name)
+  }, [savePerson, user, profile])
 
   const deletePerson = useCallback(async (id: string, name: string) => {
     if (!user) return
@@ -128,20 +104,11 @@ export function useSupabaseSync(
     await logHistory('delete_person', id, name)
   }, [user, profile])
 
-  const savePersonWithHistory = useCallback(async (person: Person, isNew: boolean) => {
-    await savePerson(person)
-    const name = `${person.firstName} ${person.lastName}`.trim() || 'Без имени'
-    await logHistory(isNew ? 'add_person' : 'update_person', person.id, name)
-  }, [savePerson])
-
   const saveRelation = useCallback(async (relation: Relation) => {
     if (!user) return
     await supabase.from('relations').upsert({
-      id: relation.id,
-      type: relation.type,
-      source_id: relation.sourceId,
-      target_id: relation.targetId,
-      created_by: user.id,
+      id: relation.id, type: relation.type,
+      source_id: relation.sourceId, target_id: relation.targetId, created_by: user.id,
     })
     await logHistory('add_relation', relation.id, relation.type)
   }, [user, profile])

@@ -7,6 +7,9 @@ interface AuthContextType {
   profile: Profile | null
   session: Session | null
   loading: boolean
+  isOwner: boolean
+  canEdit: (createdBy?: string) => boolean
+  canDelete: (createdBy?: string) => boolean
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
@@ -22,26 +25,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
+      setSession(session); setUser(session?.user ?? null)
       if (session?.user) loadProfile(session.user.id)
       else setLoading(false)
     })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      setUser(session?.user ?? null)
+      setSession(session); setUser(session?.user ?? null)
       if (session?.user) loadProfile(session.user.id)
       else { setProfile(null); setLoading(false) }
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
   async function loadProfile(userId: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
-    setProfile(data)
-    setLoading(false)
+    setProfile(data); setLoading(false)
   }
 
   async function signIn(email: string, password: string) {
@@ -50,19 +48,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signUp(email: string, password: string, fullName: string) {
-    const { error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { full_name: fullName } }
+    const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
+    const isFirst = (count || 0) === 0
+    const { data, error } = await supabase.auth.signUp({
+      email, password, options: { data: { full_name: fullName } }
     })
+    if (!error && data.user && isFirst) {
+      setTimeout(async () => {
+        await supabase.from('profiles').update({ role: 'owner' }).eq('id', data.user!.id)
+      }, 1500)
+    }
     return { error }
   }
 
-  async function signOut() {
-    await supabase.auth.signOut()
+  async function signOut() { await supabase.auth.signOut() }
+
+  const isOwner = profile?.role === 'owner'
+
+  // Владелец может редактировать всё. Участник — только своё (или новое, где createdBy не задан)
+  const canEdit = (createdBy?: string) => {
+    if (isOwner) return true
+    if (!createdBy) return true // новый объект
+    return createdBy === user?.id
+  }
+
+  // Владелец удаляет всё. Участник — только своё
+  const canDelete = (createdBy?: string) => {
+    if (isOwner) return true
+    if (!createdBy) return false
+    return createdBy === user?.id
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, profile, session, loading, isOwner, canEdit, canDelete, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   )

@@ -4,12 +4,13 @@ export type Privacy = 'public' | 'private';
 
 export interface Person {
   id: string;
+  createdBy?: string;
   firstName: string;
   lastName: string;
   birthDate?: string;
   deathDate?: string;
   birthPlace?: string;
-  photo?: string; // base64 or blob URL
+  photo?: string;
   gender: Gender;
   notes?: string;
   privacy: Privacy;
