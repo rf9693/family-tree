@@ -1,24 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Person, Gender, Privacy, Relation } from '../../types';
+import { toast } from 'sonner';
 import { useApp, generateId } from '../../store/AppContext';
 import { useAuth } from '../../store/AuthContext';
 import { t } from '../../i18n';
+import { resizeImage } from '../../utils/image';
 
 interface PersonDialogProps {
+  // null opens the dialog for a new person placed at `newPersonPosition`.
   personId: string | null;
+  newPersonPosition?: { x: number; y: number };
   onClose: () => void;
-  onSave?: (person: Person, isNew: boolean) => void;
+  onSave: (person: Person, isNew: boolean) => void;
   onDelete?: (id: string) => void;
-  onSaveRelation?: (relation: Relation) => void;
-  onDeleteRelation?: (id: string) => void;
-  newPersonPreset?: { x: number; y: number } | null;
+  onAddRelation: (relation: Relation) => void;
+  onDeleteRelation: (relation: Relation) => void;
 }
 
-export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelation, onDeleteRelation, newPersonPreset }: PersonDialogProps) {
-  const { state, dispatch, updatePerson, deletePerson, setPhoto, addPerson, addRelation } = useApp();
-  const { user } = useAuth();
-  const isNew = personId === '__new__';
-  const person = isNew ? null : state.tree.persons.find(p => p.id === personId);
+export function PersonDialog({ personId, newPersonPosition, onClose, onSave, onDelete, onAddRelation, onDeleteRelation }: PersonDialogProps) {
+  const { state } = useApp();
+  const { user, canDelete } = useAuth();
+  const isNew = personId === null;
+  const person = isNew ? undefined : state.tree.persons.find(p => p.id === personId);
 
   const [form, setForm] = useState<Partial<Person>>({
     firstName: '',
@@ -41,44 +44,39 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
   useEffect(() => {
     if (person) {
       setForm({ ...person });
-      setPhotoPreview(state.photos[person.id] || '');
+      setPhotoPreview(person.photo || '');
     }
-  }, [person, personId]);
+  }, [person]);
 
   function handleSave() {
+    const photo = photoPreview || undefined;
     if (isNew) {
-      const newP = addPerson({ 
-        ...form as Partial<Person>, 
-        createdBy: user?.id,
-        ...(newPersonPreset || {}) 
-      });
-      if (photoPreview) setPhoto(newP.id, photoPreview);
-      onSave?.(newP, true);
+      const pos = newPersonPosition ?? { x: 400, y: 300 };
+      onSave({
+        firstName: '', lastName: '', gender: 'unknown', privacy: 'public',
+        ...form,
+        id: generateId(), createdBy: user?.id, photo, x: pos.x, y: pos.y,
+      }, true);
     } else if (person) {
-      const updated = { ...person, ...form } as Person;
-      updatePerson(updated);
-      if (photoPreview && photoPreview !== state.photos[person.id]) {
-        setPhoto(person.id, photoPreview);
-      }
-      onSave?.(updated, false);
+      onSave({ ...person, ...form, photo }, false);
     }
     onClose();
   }
 
   function handleDelete() {
     if (!deleteConfirm) { setDeleteConfirm(true); return; }
-    if (person) {
-      onDelete ? onDelete(person.id) : deletePerson(person.id);
-    }
+    if (person) onDelete?.(person.id);
     onClose();
   }
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+    try {
+      setPhotoPreview(await resizeImage(file));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось загрузить фото');
+    }
   }
 
   function handleAddRelation() {
@@ -98,15 +96,12 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
       };
     }
     
-    // Создаем полную связь с ID и createdBy
-    const fullRelation: Relation = {
-      id: generateId(),
-      createdBy: user?.id,
-      ...relData
-    };
-    
-    // Используем onSaveRelation вместо addRelation для правильной синхронизации
-    onSaveRelation?.(fullRelation);
+    const exists = state.tree.relations.some(r => r.type === relData.type && (
+      (r.sourceId === relData.sourceId && r.targetId === relData.targetId) ||
+      (relData.type !== 'parent-child' && r.sourceId === relData.targetId && r.targetId === relData.sourceId)
+    ));
+    if (exists) { toast.info('Такая связь уже есть'); return; }
+    onAddRelation({ id: generateId(), createdBy: user?.id, ...relData });
     setRelationTarget('');
   }
 
@@ -209,7 +204,7 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
                         cursor: 'pointer', fontSize: 12,
                       }}
                     >
-                      {g === 'male' ? '♂' : g === 'female' ? '♀' : g === 'other' ? '⚧' : '?'} {t(g as any)}
+                      {g === 'male' ? '♂' : g === 'female' ? '♀' : g === 'other' ? '⚧' : '?'} {t(g as Parameters<typeof t>[0])}
                     </button>
                   ))}
                 </div>
@@ -228,7 +223,7 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
                         cursor: 'pointer', fontSize: 12,
                       }}
                     >
-                      {pv === 'public' ? '🌍' : '🔒'} {t(pv as any)}
+                      {pv === 'public' ? '🌍' : '🔒'} {t(pv as Parameters<typeof t>[0])}
                     </button>
                   ))}
                 </div>
@@ -250,8 +245,10 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
                       <div key={rel.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 4 }}>
                         <span>{typeIcon}</span>
                         <span style={{ color: '#e2e8f0', flex: 1, fontSize: 13 }}>{other ? `${other.firstName} ${other.lastName}` : 'Unknown'}</span>
-                        <button onClick={() => { onDeleteRelation?.(rel.id); }}
-                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                        {canDelete(rel.createdBy) && (
+                          <button onClick={() => onDeleteRelation(rel)} title="Удалить связь"
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                        )}
                       </div>
                     );
                   })}
@@ -263,7 +260,7 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
                 <div style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>Добавить связь</div>
                 <select
                   value={relationType}
-                  onChange={e => setRelationType(e.target.value as any)}
+                  onChange={e => setRelationType(e.target.value as Relation['type'])}
                   style={selectStyle}
                 >
                   <option value="parent-child">Родитель-ребёнок</option>
@@ -271,7 +268,7 @@ export function PersonDialog({ personId, onClose, onSave, onDelete, onSaveRelati
                   <option value="sibling">Братья/сёстры</option>
                 </select>
                 {relationType === 'parent-child' && (
-                  <select value={relationDir} onChange={e => setRelationDir(e.target.value as any)} style={{ ...selectStyle, marginTop: 8 }}>
+                  <select value={relationDir} onChange={e => setRelationDir(e.target.value as 'from' | 'to')} style={{ ...selectStyle, marginTop: 8 }}>
                     <option value="from">Я — родитель</option>
                     <option value="to">Я — ребёнок</option>
                   </select>
