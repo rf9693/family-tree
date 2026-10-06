@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../store/AppContext';
-import { useAuth } from '../../store/AuthContext';
+import { Person } from '../../types';
 import { PersonNode } from './PersonNode';
 import { RelationLines } from './RelationLines';
 import { ContextMenu } from '../panels/ContextMenu';
@@ -11,14 +11,16 @@ interface ContextMenuState {
   personId: string;
 }
 
+export type RelativeType = 'child' | 'parent' | 'spouse' | 'sibling';
+
 interface TreeCanvasProps {
-  onDeletePerson?: (id: string) => void;
-  onAddRelative?: (personId: string, relativeType: string) => void;
+  onDeletePerson: (id: string) => void;
+  onAddRelative: (personId: string, relativeType: RelativeType) => void;
+  onMovePerson: (person: Person, from: { x: number; y: number }, to: { x: number; y: number }) => void;
 }
 
-export function TreeCanvas({ onDeletePerson, onAddRelative }: TreeCanvasProps) {
+export function TreeCanvas({ onDeletePerson, onAddRelative, onMovePerson }: TreeCanvasProps) {
   const { state, dispatch } = useApp();
-  const { isOwner, user } = useAuth();
   const svgRef = useRef<SVGSVGElement>(null);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
@@ -111,14 +113,15 @@ export function TreeCanvas({ onDeletePerson, onAddRelative }: TreeCanvasProps) {
 
   const lastTap = useRef(0);
   const handleDoubleTap = useCallback((e: React.TouchEvent) => {
+    const target = e.target as Element;
+    if (target.tagName !== 'svg' && !target.getAttribute('data-bg')) return;
     const now = Date.now();
     if (now - lastTap.current < 300) { dispatch({ type: 'SET_PAN', x: 0, y: 0 }); dispatch({ type: 'SET_ZOOM', zoom: 1 }); }
     lastTap.current = now;
   }, [dispatch]);
 
-  const uniquePersons = state.tree.persons.filter((p, i, a) => a.findIndex(x => x.id === p.id) === i);
-  const uniqueRelations = state.tree.relations.filter((r, i, a) => a.findIndex(x => x.id === r.id) === i);
-  const filteredIds = new Set(uniquePersons.filter(p => {
+  const { persons, relations } = state.tree;
+  const filteredIds = new Set(persons.filter(p => {
     if (state.searchQuery && !`${p.firstName} ${p.lastName}`.toLowerCase().includes(state.searchQuery.toLowerCase())) return false;
     if (state.filterAlive && p.deathDate) return false;
     return true;
@@ -140,7 +143,7 @@ export function TreeCanvas({ onDeletePerson, onAddRelative }: TreeCanvasProps) {
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onClick={handleDoubleTap as any}
+        onTouchEndCapture={handleDoubleTap}
       >
         <defs>
           <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
@@ -153,14 +156,15 @@ export function TreeCanvas({ onDeletePerson, onAddRelative }: TreeCanvasProps) {
             <circle cx="0" cy="0" r="0.8" fill="rgba(255,255,255,0.06)" />
           </pattern>
           <rect x={-5000} y={-5000} width={10000} height={10000} fill="url(#grid)" />
-          <RelationLines persons={uniquePersons} relations={uniqueRelations} selectedId={state.selectedId} />
-          {uniquePersons.map(person => (
+          <RelationLines persons={persons} relations={relations} selectedId={state.selectedId} />
+          {persons.map(person => (
             <PersonNode
               key={person.id}
               person={person}
               isSelected={person.id === state.selectedId}
               isFiltered={state.searchQuery !== '' || state.filterAlive ? !filteredIds.has(person.id) : false}
               zoom={state.zoom}
+              onMoveEnd={onMovePerson}
             />
           ))}
         </g>
@@ -177,11 +181,11 @@ export function TreeCanvas({ onDeletePerson, onAddRelative }: TreeCanvasProps) {
             setContextMenu(null);
           }}
           onAddRelative={(type) => {
-            onAddRelative?.(contextMenu.personId, type);
+            onAddRelative(contextMenu.personId, type);
             setContextMenu(null);
           }}
           onDelete={() => {
-            onDeletePerson?.(contextMenu.personId);
+            onDeletePerson(contextMenu.personId);
             setContextMenu(null);
           }}
         />

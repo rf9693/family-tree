@@ -7,6 +7,7 @@ interface PersonNodeProps {
   isSelected: boolean;
   isFiltered: boolean;
   zoom: number;
+  onMoveEnd: (person: Person, from: { x: number; y: number }, to: { x: number; y: number }) => void;
 }
 
 const genderColors = {
@@ -16,15 +17,16 @@ const genderColors = {
   unknown: { bg: '#2d2d2d', border: '#6b7280', text: '#9ca3af', initials: '#6b7280' },
 };
 
-export function PersonNode({ person, isSelected, isFiltered, zoom }: PersonNodeProps) {
-  const { dispatch, state } = useApp();
+export function PersonNode({ person, isSelected, isFiltered, zoom, onMoveEnd }: PersonNodeProps) {
+  const { dispatch } = useApp();
   const dragStart = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const lastPos = useRef<{ x: number; y: number } | null>(null);
   const isDragging = useRef(false);
-  const clickTimer = useRef<ReturnType<typeof setTimeout>>();
-  const longPressTimer = useRef<ReturnType<typeof setTimeout>>();
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const colors = genderColors[person.gender];
-  const photo = state.photos[person.id];
+  const colors = genderColors[person.gender] ?? genderColors.unknown;
+  const photo = person.photo;
 
   const initials = [person.firstName?.[0], person.lastName?.[0]]
     .filter(Boolean)
@@ -51,12 +53,8 @@ export function PersonNode({ person, isSelected, isFiltered, zoom }: PersonNodeP
       const dy = (me.clientY - dragStart.current.y) / zoom;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         isDragging.current = true;
-        dispatch({
-          type: 'MOVE_PERSON',
-          id: person.id,
-          x: dragStart.current.px + dx,
-          y: dragStart.current.py + dy,
-        });
+        lastPos.current = { x: dragStart.current.px + dx, y: dragStart.current.py + dy };
+        dispatch({ type: 'MOVE_PERSON', id: person.id, ...lastPos.current });
       }
     };
 
@@ -64,15 +62,17 @@ export function PersonNode({ person, isSelected, isFiltered, zoom }: PersonNodeP
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       if (!isDragging.current) {
-        // single click
         dispatch({ type: 'SELECT', id: person.id });
+      } else if (dragStart.current && lastPos.current) {
+        onMoveEnd(person, { x: dragStart.current.px, y: dragStart.current.py }, lastPos.current);
       }
       dragStart.current = null;
+      lastPos.current = null;
     };
 
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  }, [person, zoom, dispatch]);
+  }, [person, zoom, dispatch, onMoveEnd]);
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -100,7 +100,8 @@ export function PersonNode({ person, isSelected, isFiltered, zoom }: PersonNodeP
     const dy = (touch.clientY - dragStart.current.y) / zoom;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
       isDragging.current = true;
-      dispatch({ type: 'MOVE_PERSON', id: person.id, x: dragStart.current.px + dx, y: dragStart.current.py + dy });
+      lastPos.current = { x: dragStart.current.px + dx, y: dragStart.current.py + dy };
+      dispatch({ type: 'MOVE_PERSON', id: person.id, ...lastPos.current });
     }
   }, [person, zoom, dispatch]);
 
@@ -114,10 +115,13 @@ export function PersonNode({ person, isSelected, isFiltered, zoom }: PersonNodeP
         dispatch({ type: 'SELECT', id: person.id });
         clickTimer.current = setTimeout(() => { clickTimer.current = undefined; }, 300);
       }
+    } else if (dragStart.current && lastPos.current) {
+      onMoveEnd(person, { x: dragStart.current.px, y: dragStart.current.py }, lastPos.current);
     }
     dragStart.current = null;
+    lastPos.current = null;
     isDragging.current = false;
-  }, [person.id, dispatch]);
+  }, [person, dispatch, onMoveEnd]);
 
   const w = 160;
   const h = 80;

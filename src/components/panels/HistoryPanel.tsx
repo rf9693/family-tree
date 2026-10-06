@@ -11,6 +11,9 @@ const ACTION_LABELS: Record<string, { icon: string; label: string }> = {
   delete_person: { icon: '🗑️', label: 'Удалил человека' },
   add_relation:  { icon: '🔗', label: 'Добавил связь' },
   delete_relation: { icon: '✂️', label: 'Удалил связь' },
+  import:        { icon: '📥', label: 'Импортировал' },
+  undo:          { icon: '↩', label: 'Отменил' },
+  redo:          { icon: '↪', label: 'Повторил' },
 }
 
 function timeAgo(dateStr: string): string {
@@ -42,11 +45,12 @@ export function HistoryPanel({ onClose }: HistoryPanelProps) {
   }, [])
 
   async function loadHistory() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('history')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(100)
+    if (error) console.error('loadHistory error', error)
     setHistory(data || [])
     setLoading(false)
   }

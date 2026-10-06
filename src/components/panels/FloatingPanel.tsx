@@ -1,14 +1,22 @@
 import React, { useState, useRef } from 'react';
-import { useApp } from '../../store/AppContext';
+import { toast } from 'sonner';
+import { useApp, generateId } from '../../store/AppContext';
 import { t } from '../../i18n';
-import { exportJSON, exportGEDCOM, importJSON, parseGEDCOM } from '../../utils/storage';
-import { FamilyTree } from '../../types';
+import { exportJSON, importJSON } from '../../utils/json';
+import { exportGEDCOM, parseGEDCOM } from '../../utils/gedcom';
+import { Person, Relation } from '../../types';
 
 interface FloatingPanelProps {
   onAddPerson: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  canImport: boolean;
+  onImport: (persons: Person[], relations: Relation[], label: string) => void;
 }
 
-export function FloatingPanel({ onAddPerson }: FloatingPanelProps) {
+export function FloatingPanel({ onAddPerson, onUndo, onRedo, canUndo, canRedo, canImport, onImport }: FloatingPanelProps) {
   const { state, dispatch } = useApp();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -18,9 +26,8 @@ export function FloatingPanel({ onAddPerson }: FloatingPanelProps) {
     setOpenMenu(prev => prev === name ? null : name);
   }
 
-  async function handleExportJSON() {
-    const json = await exportJSON(state.tree, state.photos);
-    download('family-tree.json', json, 'application/json');
+  function handleExportJSON() {
+    download('family-tree.json', exportJSON(state.tree), 'application/json');
     setOpenMenu(null);
   }
 
@@ -30,41 +37,33 @@ export function FloatingPanel({ onAddPerson }: FloatingPanelProps) {
     setOpenMenu(null);
   }
 
-  function handleImportJSON(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  function readFile(e: React.ChangeEvent<HTMLInputElement>, parse: (text: string) => { persons: Person[]; relations: Relation[] }) {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = '';
     if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
       try {
-        const tree = importJSON(ev.target!.result as string) as FamilyTree;
-        dispatch({ type: 'SET_TREE', tree });
-      } catch { alert('Ошибка импорта JSON'); }
+        const { persons, relations } = parse(ev.target?.result as string);
+        if (!persons.length) { toast.error('В файле нет людей'); return; }
+        if (!confirm(`Добавить в древо ${persons.length} чел. и ${relations.length} связей из «${file.name}»?`)) return;
+        onImport(persons, relations, file.name);
+      } catch (err) {
+        toast.error(`Ошибка импорта: ${err instanceof Error ? err.message : String(err)}`);
+      }
     };
     reader.readAsText(file);
-    setOpenMenu(null);
   }
 
-  function handleImportGEDCOM(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const { persons, relations } = parseGEDCOM(ev.target!.result as string);
-        dispatch({ type: 'SET_TREE', tree: { ...state.tree, persons, relations, updatedAt: new Date().toISOString() } });
-      } catch { alert('Ошибка импорта GEDCOM'); }
-    };
-    reader.readAsText(file);
-    setOpenMenu(null);
-  }
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => readFile(e, importJSON);
+  const handleImportGEDCOM = (e: React.ChangeEvent<HTMLInputElement>) => readFile(e, text => parseGEDCOM(text, generateId));
 
   function handleFitAll() {
     dispatch({ type: 'SET_PAN', x: 0, y: 0 });
     dispatch({ type: 'SET_ZOOM', zoom: 0.8 });
   }
 
-  const canUndo = state.historyIndex > 0;
-  const canRedo = state.historyIndex < state.history.length - 1;
 
   return (
     <>
@@ -84,8 +83,8 @@ export function FloatingPanel({ onAddPerson }: FloatingPanelProps) {
         zIndex: 50,
       }}>
         {/* Undo/Redo */}
-        <PanelBtn onClick={() => dispatch({ type: 'UNDO' })} disabled={!canUndo} title="Undo (Ctrl+Z)">↩</PanelBtn>
-        <PanelBtn onClick={() => dispatch({ type: 'REDO' })} disabled={!canRedo} title="Redo">↪</PanelBtn>
+        <PanelBtn onClick={onUndo} disabled={!canUndo} title="Отменить (Ctrl+Z)">↩</PanelBtn>
+        <PanelBtn onClick={onRedo} disabled={!canRedo} title="Повторить (Ctrl+Y)">↪</PanelBtn>
 
         <div style={{ width: 1, height: 24, background: 'rgba(148,163,184,0.15)', margin: '0 4px' }} />
 
@@ -129,22 +128,16 @@ export function FloatingPanel({ onAddPerson }: FloatingPanelProps) {
             <FloatingMenu style={{ bottom: 52, right: 0 }}>
               <MenuBtn onClick={handleExportJSON}>📄 {t('exportJSON')}</MenuBtn>
               <MenuBtn onClick={handleExportGEDCOM}>🌳 {t('exportGEDCOM')}</MenuBtn>
-              <div style={{ height: 1, background: 'rgba(148,163,184,0.1)', margin: '4px 0' }} />
-              <MenuBtn onClick={() => { importRef.current?.click(); setOpenMenu(null); }}>📥 {t('importJSON')}</MenuBtn>
-              <MenuBtn onClick={() => { importGEDRef.current?.click(); setOpenMenu(null); }}>📥 {t('importGEDCOM')}</MenuBtn>
+              {canImport && (
+                <>
+                  <div style={{ height: 1, background: 'rgba(148,163,184,0.1)', margin: '4px 0' }} />
+                  <MenuBtn onClick={() => { importRef.current?.click(); setOpenMenu(null); }}>📥 {t('importJSON')}</MenuBtn>
+                  <MenuBtn onClick={() => { importGEDRef.current?.click(); setOpenMenu(null); }}>📥 {t('importGEDCOM')}</MenuBtn>
+                </>
+              )}
             </FloatingMenu>
           )}
         </div>
-
-        {/* Demo remove */}
-        {state.isDemoTree && (
-          <>
-            <div style={{ width: 1, height: 24, background: 'rgba(148,163,184,0.15)', margin: '0 4px' }} />
-            <PanelBtn onClick={() => dispatch({ type: 'REMOVE_DEMO' })} title={t('removeDemo')} style={{ color: '#f59e0b', fontSize: 11 }}>
-              ✕ Demo
-            </PanelBtn>
-          </>
-        )}
 
         {/* Lang */}
         <div style={{ position: 'relative' }}>
@@ -163,23 +156,21 @@ export function FloatingPanel({ onAddPerson }: FloatingPanelProps) {
         </div>
       </div>
 
-      {/* Stats bar */}
-      <div style={{
-        position: 'fixed', top: 16, right: 16,
-        background: 'rgba(15,20,40,0.8)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(148,163,184,0.1)',
-        borderRadius: 8, padding: '6px 12px',
-        color: '#64748b', fontSize: 12,
-        fontFamily: 'Georgia, serif',
-      }}>
-        👥 {state.tree.persons.length} {t('persons')}
-      </div>
     </>
   );
 }
 
-function PanelBtn({ children, onClick, disabled, primary, active, title, style }: any) {
+interface PanelBtnProps {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  active?: boolean;
+  title?: string;
+  style?: React.CSSProperties;
+}
+
+function PanelBtn({ children, onClick, disabled, primary, active, title, style }: PanelBtnProps) {
   return (
     <button
       onClick={onClick}
@@ -200,7 +191,7 @@ function PanelBtn({ children, onClick, disabled, primary, active, title, style }
   );
 }
 
-function FloatingMenu({ children, style }: any) {
+function FloatingMenu({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{
       position: 'absolute',
@@ -218,7 +209,7 @@ function FloatingMenu({ children, style }: any) {
   );
 }
 
-function MenuBtn({ children, onClick }: any) {
+function MenuBtn({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
     <button onClick={onClick} style={{
       display: 'block', width: '100%', textAlign: 'left',
@@ -239,7 +230,7 @@ function download(filename: string, content: string, type: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 const searchInputStyle: React.CSSProperties = {

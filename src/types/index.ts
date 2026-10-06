@@ -25,20 +25,9 @@ export interface Relation {
   type: RelationType;
   sourceId: string;
   targetId: string;
-  marriageDate?: string;
-  divorceDate?: string;
 }
 
 export interface FamilyTree {
-  id: string;
-  name: string;
-  persons: Person[];
-  relations: Relation[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface HistoryEntry {
   persons: Person[];
   relations: Relation[];
 }

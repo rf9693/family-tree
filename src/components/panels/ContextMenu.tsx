@@ -1,17 +1,22 @@
 import React, { useEffect } from 'react';
 import { useApp } from '../../store/AppContext';
 import { useAuth } from '../../store/AuthContext';
+import type { RelativeType } from '../tree/TreeCanvas';
 
 interface ContextMenuProps {
   x: number; y: number; personId: string;
   onClose: () => void; onEdit: () => void;
-  onAddRelative: (type: string) => void;
+  onAddRelative: (type: RelativeType) => void;
   onDelete: () => void;
 }
 
+type MenuItem =
+  | { divider: true }
+  | { divider?: false; icon: string; label: string; action: () => void; danger?: boolean };
+
 export function ContextMenu({ x, y, personId, onClose, onEdit, onAddRelative, onDelete }: ContextMenuProps) {
   const { state } = useApp();
-  const { isOwner, user } = useAuth();
+  const { canDelete: canDeleteBy } = useAuth();
 
   useEffect(() => {
     const handler = () => onClose();
@@ -20,23 +25,23 @@ export function ContextMenu({ x, y, personId, onClose, onEdit, onAddRelative, on
   }, [onClose]);
 
   const person = state.tree.persons.find(p => p.id === personId);
-  const canDelete = isOwner || person?.createdBy === user?.id;
+  const canDelete = canDeleteBy(person?.createdBy);
 
-  const items = [
+  const items: MenuItem[] = [
     { icon: '✏️', label: 'Редактировать', action: onEdit },
     { icon: '👶', label: 'Добавить ребёнка', action: () => onAddRelative('child') },
     { icon: '👴', label: 'Добавить родителя', action: () => onAddRelative('parent') },
     { icon: '💍', label: 'Добавить супруга/у', action: () => onAddRelative('spouse') },
     { icon: '👥', label: 'Добавить брата/сестру', action: () => onAddRelative('sibling') },
     ...(canDelete ? [
-      { divider: true },
+      { divider: true as const },
       { icon: '🗑️', label: 'Удалить', action: onDelete, danger: true },
     ] : []),
-  ] as any[];
+  ];
 
   return (
     <div onClick={e => e.stopPropagation()} style={{ position:'fixed', left:x, top:y, background:'rgba(15,20,40,0.98)', backdropFilter:'blur(20px)', border:'1px solid rgba(148,163,184,0.15)', borderRadius:10, padding:6, minWidth:200, boxShadow:'0 8px 24px rgba(0,0,0,0.6)', zIndex:80, animation:'fadeInUp 0.15s ease-out' }}>
-      {items.map((item: any, i: number) => {
+      {items.map((item, i) => {
         if (item.divider) return <div key={i} style={{ height:1, background:'rgba(148,163,184,0.1)', margin:'4px 0' }} />;
         return (
           <button key={i} onClick={() => { item.action(); onClose(); }}
