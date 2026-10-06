@@ -124,6 +124,7 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- Only the owner may change roles; the e-mail of a profile is not editable.
+-- Requests without a user (SQL Editor, service role) are trusted.
 create or replace function public.protect_profile_fields()
 returns trigger
 language plpgsql
@@ -131,10 +132,12 @@ security definer
 set search_path = public
 as $$
 begin
-  if new.role is distinct from old.role and not public.is_owner() then
+  if new.role is distinct from old.role and auth.uid() is not null and not public.is_owner() then
     new.role := old.role;
   end if;
-  new.email := old.email;
+  if auth.uid() is not null then
+    new.email := old.email;
+  end if;
   return new;
 end;
 $$;
